@@ -63,7 +63,7 @@ static ngx_command_t ngx_http_cookie_flag_filter_commands[] = {
 
     /* set cookie flag directive */
     { ngx_string("set_cookie_flag"),
-      NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
+      NGX_HTTP_MAIN_CONF|NGX_HTTP_SRV_CONF|NGX_HTTP_LOC_CONF|NGX_CONF_1MORE,
       ngx_http_cookie_flag_filter_cmd,
       NGX_HTTP_LOC_CONF_OFFSET,
       0,
@@ -235,57 +235,27 @@ ngx_http_cookie_flag_filter_init(ngx_conf_t *cf)
 static ngx_int_t
 ngx_http_cookie_flag_filter_append(ngx_http_request_t *r, ngx_http_cookie_t *cookie, ngx_table_elt_t *header)
 {
-    ngx_str_t tmp;
+    u_char *p, *last;
 
-    if (cookie->httponly == 1 && ngx_strcasestrn(header->value.data, "; HttpOnly", 10 - 1) == NULL) {
-        tmp.data = ngx_pnalloc(r->pool, header->value.len + sizeof("; HttpOnly") - 1);
-        if (tmp.data == NULL) {
-            return NGX_ERROR;
-        }
-        tmp.len = ngx_sprintf(tmp.data, "%V; HttpOnly", &header->value) - tmp.data;
-        header->value.data = tmp.data;
-        header->value.len = tmp.len;
-    }
+#define NGX_CHECK_APPEND_COOKIE_FLAG(a, b) do {                     \
+  last = header->value.data + header->value.len;                    \
+  if (cookie->a == 1 && ngx_strlcasestrn(header->value.data, last,  \
+        (u_char *)b, sizeof(b) - 1) == NULL) {                      \
+    p = ngx_pnalloc(r->pool, header->value.len + sizeof(b));        \
+    if (p == NULL) {                                                \
+      return NGX_ERROR;                                             \
+    }                                                               \
+    header->value.len = ngx_sprintf(p, "%V" b, &header->value) - p; \
+    header->value.data = p;                                         \
+    p[header->value.len] = '\0';                                    \
+  }                                                                 \
+} while(0)
 
-    if (cookie->secure == 1 && ngx_strcasestrn(header->value.data, "; secure", 8 - 1) == NULL) {
-        tmp.data = ngx_pnalloc(r->pool, header->value.len + sizeof("; secure") - 1);
-        if (tmp.data == NULL) {
-            return NGX_ERROR;
-        }
-        tmp.len = ngx_sprintf(tmp.data, "%V; secure", &header->value) - tmp.data;
-        header->value.data = tmp.data;
-        header->value.len = tmp.len;
-    }
-
-    if (cookie->samesite == 1 && ngx_strcasestrn(header->value.data, "; SameSite", 10 - 1) == NULL) {
-        tmp.data = ngx_pnalloc(r->pool, header->value.len + sizeof("; SameSite") - 1);
-        if (tmp.data == NULL) {
-            return NGX_ERROR;
-        }
-        tmp.len = ngx_sprintf(tmp.data, "%V; SameSite", &header->value) - tmp.data;
-        header->value.data = tmp.data;
-        header->value.len = tmp.len;
-    }
-
-    if (cookie->samesite_lax == 1 && ngx_strcasestrn(header->value.data, "; SameSite=Lax", 14 - 1) == NULL) {
-        tmp.data = ngx_pnalloc(r->pool, header->value.len + sizeof("; SameSite=Lax") - 1);
-        if (tmp.data == NULL) {
-            return NGX_ERROR;
-        }
-        tmp.len = ngx_sprintf(tmp.data, "%V; SameSite=Lax", &header->value) - tmp.data;
-        header->value.data = tmp.data;
-        header->value.len = tmp.len;
-    }
-
-    if (cookie->samesite_strict == 1 && ngx_strcasestrn(header->value.data, "; SameSite=Strict", 17 - 1) == NULL) {
-        tmp.data = ngx_pnalloc(r->pool, header->value.len + sizeof("; SameSite=Strict") - 1);
-        if (tmp.data == NULL) {
-            return NGX_ERROR;
-        }
-        tmp.len = ngx_sprintf(tmp.data, "%V; SameSite=Strict", &header->value) - tmp.data;
-        header->value.data = tmp.data;
-        header->value.len = tmp.len;
-    }
+    NGX_CHECK_APPEND_COOKIE_FLAG(httponly, "; HttpOnly");
+    NGX_CHECK_APPEND_COOKIE_FLAG(secure, "; secure");
+    NGX_CHECK_APPEND_COOKIE_FLAG(samesite, "; SameSite");
+    NGX_CHECK_APPEND_COOKIE_FLAG(samesite_lax, "; SameSite=Lax");
+    NGX_CHECK_APPEND_COOKIE_FLAG(samesite_strict, "; SameSite=Strict");
 
     return NGX_OK;
 }
