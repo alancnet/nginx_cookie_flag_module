@@ -266,6 +266,7 @@ ngx_http_cookie_flag_filter_handler(ngx_http_request_t *r)
     ngx_http_cookie_flag_filter_loc_conf_t *flcf;
     ngx_http_cookie_t *cookie;
     ngx_uint_t i, j;
+    ngx_str_t       *name;
     ngx_list_part_t *part;
     ngx_table_elt_t *header;
 
@@ -301,26 +302,27 @@ ngx_http_cookie_flag_filter_handler(ngx_http_request_t *r)
 
             // for each security cookie we check whether preset it within Set-Cookie value. If not then we append.
             for (j = 0; j < flcf->cookies->nelts; j++) {
+                name = &cookie[j].cookie_name;
 
-                if (ngx_strncasecmp(cookie[j].cookie_name.data, (u_char *) "*", 1) != 0) {
-                    // append "=" to the security cookie name. The result will be something like "cookie_name="
-                    char *cookie_name = ngx_pnalloc(r->pool,  sizeof("=") - 1 + cookie[j].cookie_name.len);
-                    if (cookie_name == NULL) {
+                if (name->len != 1 || name->data[0] != '*') {
+                    if (header[i].value.len <= name->len + sizeof("=") - 1) {
+                        continue;
+                    }
+
+                    if (ngx_strncasecmp(name->data, header[i].value.data,
+                          name->len) != 0 ||
+                        header[i].value.data[name->len] != '=')
+                    {
+                        continue;
+                    }
+
+                    ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "filter http_cookie_flag - add flags for cookie \"%V\"", name);
+                    ngx_int_t res = ngx_http_cookie_flag_filter_append(r, &cookie[j], &header[i]);
+                    if (res != NGX_OK) {
                         return NGX_ERROR;
                     }
-                    strcpy(cookie_name, (char *) cookie[j].cookie_name.data);
-                    strcat(cookie_name, "=");
-
-                    // if Set-Cookie contains a cookie from settings
-                    if (ngx_strcasestrn(header[i].value.data, cookie_name, strlen(cookie_name) - 1) != NULL) {
-                        ngx_log_debug1(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "filter http_cookie_flag - add flags for cookie \"%V\"", &cookie[j].cookie_name);
-                        ngx_int_t res = ngx_http_cookie_flag_filter_append(r, &cookie[j], &header[i]);
-                        if (res != NGX_OK) {
-                            return NGX_ERROR;
-                        }
-                        break; // otherwise default value will be added
-                    }
-                } else if (ngx_strncasecmp(cookie[j].cookie_name.data, (u_char *) "*", 1) == 0) {
+                    break; // otherwise default value will be added
+                } else {
                     ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "filter http_cookie_flag - add default cookie flags");
                     ngx_int_t res = ngx_http_cookie_flag_filter_append(r, &cookie[j], &header[i]);
                     if (res != NGX_OK) {
